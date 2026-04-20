@@ -32,8 +32,11 @@ try:
         # 5. Feed the raw audio data into the model
         prediction = owwModel.predict(audio_data)
 
-        # 6. Check if the confidence score is high enough
-        if prediction['hey_jarvis_v0.1'] > 0.5:  # The model name in the dictionary usually includes the version
+# 6. Check if the confidence score is high enough
+        # Dynamically get the model's key name so we don't get a KeyError
+        model_key = list(prediction.keys())[0] 
+        
+        if prediction[model_key] > 0.5:
             print("\n[Jarvis]: Yes, sir?")
             os.system('say "Yes, sir?"')
             
@@ -47,3 +50,4 @@ finally:
     mic_stream.stop_stream()
     mic_stream.close()
     audio.terminate()
+
