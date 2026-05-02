@@ -8,6 +8,7 @@ import speech_recognition as sr
 import warnings
 import ollama
 import re
+import eyes_jarvis
 
 # Suppress FP16 warnings from Whisper on Mac CPUs
 warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
@@ -62,34 +63,59 @@ def listen_for_command():
             if os.path.exists("temp_cmd.wav"):
                 os.remove("temp_cmd.wav")
 
+# ==========================================
+# JARVIS MEMORY MODULE
+# ==========================================
+chat_history = []
+MAX_HISTORY = 10  # Keep the last 10 exchanges in memory
+
 def query_brain(prompt):
-    """Feeds the text to Ollama with strict OS-level action rules."""
+    """Feeds the text to Ollama with strict OS rules AND conversational memory."""
+    global chat_history
     print("[Jarvis]: Thinking...")
+    
+    # 1. The Permanent System Prompt (Jarvis's Core Identity & Rules)
+    system_message = {
+        'role': 'system',
+        'content': '''You are Jarvis, a highly efficient AI assistant running on a MacBook. 
+        Keep conversational responses to 1 short sentence. 
+        
+        CRITICAL INSTRUCTIONS FOR COMMANDS:
+        1. LOCAL APPS: If asked to open a desktop application (like Brave, Firefox, Terminal, Spotify), output EXACTLY: <OPEN: AppName>
+        2. WEBSITES: If asked to open a web service, or if the user explicitly says "in browser" or ".com" (like Gmail, YouTube, GitHub), output EXACTLY: <WEBSITE: https://www.url.com>
+        
+        STRICT HEURISTICS:
+        - If the prompt contains "Gmail", "Google", "Netflix", or "YouTube", treat it as a WEBSITE.
+        - If the prompt contains "in browser", ALWAYS treat it as a WEBSITE.
+        - If the prompt contains "Brave", "Safari", "Chrome", or "Finder", treat it as an APP.
+        
+        If you output a tag, do NOT output any conversational text with it. Just the tag.'''
+    }
+    
+    # 2. Add your current spoken command to the memory bank
+    chat_history.append({'role': 'user', 'content': prompt})
+    
+    # 3. Prune the memory if it gets too long (Saves RAM and processing speed)
+    if len(chat_history) > MAX_HISTORY:
+        chat_history = chat_history[-MAX_HISTORY:]
+        
+    # 4. Combine the System Rules with the short-term memory
+    messages = [system_message] + chat_history
+    
     try:
-        response = ollama.chat(model='llama3.1', messages=[
-            {
-                'role': 'system',
-                'content': '''You are Jarvis, a highly efficient AI assistant running on a MacBook. 
-                Keep conversational responses to 1 short sentence. 
-                
-                CRITICAL INSTRUCTIONS FOR COMMANDS:
-                1. LOCAL APPS: If asked to open a desktop application (like Brave, Firefox, Terminal, Spotify), output EXACTLY: <OPEN: AppName>
-                2. WEBSITES: If asked to open a web service, or if the user explicitly says "in browser" or ".com" (like Gmail, YouTube, GitHub), output EXACTLY: <WEBSITE: https://www.url.com>
-                
-                STRICT HEURISTICS:
-                - If the prompt contains "Gmail", "Google", "Netflix", or "YouTube", treat it as a WEBSITE.
-                - If the prompt contains "in browser", ALWAYS treat it as a WEBSITE.
-                - If the prompt contains "Brave", "Safari", "Chrome", or "Finder", treat it as an APP.
-                
-                If you output a tag, do NOT output any conversational text with it. Just the tag.'''
-            },
-            {
-                'role': 'user',
-                'content': prompt
-            }
-        ])
-        return response['message']['content']
+        # Note: Swap 'llama3.2' to 'llama3.1' here if you downloaded the smarter 8B model!
+        response = ollama.chat(model='llama3.1', messages=messages)
+        reply_content = response['message']['content']
+        
+        # 5. Save Jarvis's reply to the memory bank before returning it
+        chat_history.append({'role': 'assistant', 'content': reply_content})
+        
+        return reply_content
+        
     except Exception as e:
+        # If there's an error, remove your last prompt from memory so it doesn't corrupt the history
+        if chat_history:
+            chat_history.pop()
         return f"Sir, I encountered an error: {e}"
 
 def execute_action(reply):
@@ -133,8 +159,8 @@ try:
         
         # --- WAKE WORD DETECTED ---
         if prediction[model_key] > 0.5:
-            print("\n[Jarvis]: Yes, sir?")
-            os.system('say "Yes, sir?"')
+            print("\n[Jarvis]: Yes,sir?")
+            os.system('say "Yes sir?"')
             owwModel.reset() 
             mic_stream.stop_stream() # Pause the wake word mic
             
@@ -169,7 +195,7 @@ try:
                 if not action_executed:
                     print(f"[Jarvis]: {reply}")
                     safe_reply = reply.replace('"', '').replace("'", "").replace('\n', ' ')
-                    os.system(f'say "{safe_reply}"')
+                    os.system(f'say -v Samantha "{safe_reply}"')
                     
             # ---------------------------------
             
